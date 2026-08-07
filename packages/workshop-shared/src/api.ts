@@ -315,6 +315,11 @@ export interface AuthenticatedApi extends RpcTarget {
   // Deletes a configured model.
   deleteModel(id: string): Promise<void>;
 
+  /** Retrieves the configuration for a user-configured model. The API token is masked for
+   *  security (only the last 4 characters are visible). Returns null if the model is not found
+   *  or is a built-in gateway model. */
+  getModelConfig(id: string): Promise<{provider: AiModelProvider, model: string, maskedToken: string, accountId?: string, apiUrl?: string} | null>;
+
   // Set the model to use for simple quick tasks, like generating chat titles. Set null to
   // disable quick model use (e.g. chats will be titled "New Chat").
   setQuickModel(id: string | null): Promise<void>;

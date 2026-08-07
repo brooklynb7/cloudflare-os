@@ -5,6 +5,7 @@ import { useAuthenticatedApi } from '../AuthContext'
 import {
   AiChatAuthorInfo,
   AiGatewayInfo,
+  AiModelConfig,
   AiModelProvider,
   SUGGESTED_MODELS,
 } from '@gadgets/workshop-shared/api'
@@ -14,6 +15,7 @@ import {
   Lightning,
   MagnifyingGlass,
   DotsThreeVertical,
+  Pencil,
 } from '@phosphor-icons/react'
 import AddModelModal from '../AddModelModal'
 import { useDocumentTitle } from '../useDocumentTitle'
@@ -37,12 +39,14 @@ function ModelRow({
   isQuick,
   isBuiltIn,
   onDelete,
+  onEdit,
   onSetQuick,
 }: {
   model: AiChatAuthorInfo
   isQuick: boolean
   isBuiltIn: boolean
   onDelete: () => void
+  onEdit: () => void
   onSetQuick: () => void
 }) {
   return (
@@ -106,6 +110,12 @@ function ModelRow({
               {isQuick ? 'Clear quick model' : 'Set as quick model'}
             </DropdownMenu.Item>
             {!isBuiltIn && (
+              <DropdownMenu.Item onClick={onEdit} className={MENU_ITEM}>
+                <Pencil size={13} className="mr-2" />
+                Edit provider
+              </DropdownMenu.Item>
+            )}
+            {!isBuiltIn && (
               <DropdownMenu.Item variant="danger" onClick={onDelete} className={MENU_ITEM_DANGER}>
                 <Trash size={13} className="mr-2" />
                 Delete provider
@@ -143,6 +153,7 @@ function ProvidersPage() {
   const [loadError, setLoadError] = useState(false)
   const [sheetOpen, setSheetOpen] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [editingModel, setEditingModel] = useState<{profile: AiChatAuthorInfo, config: Omit<AiModelConfig, 'apiToken'> & {maskedToken: string}} | null>(null)
 
   const fetchAll = async () => {
     setLoadError(false)
@@ -184,6 +195,24 @@ function ProvidersPage() {
       toasts.add({ title: 'Failed to delete provider', variant: 'error' })
     } finally {
       setDeletingId(null)
+    }
+  }
+
+  const handleEdit = async (model: AiChatAuthorInfo) => {
+    try {
+      const config = await authenticatedApi.getModelConfig(model.id)
+      if (!config) {
+        toasts.add({ title: 'Cannot edit this provider', variant: 'error' })
+        return
+      }
+      setEditingModel({
+        profile: model,
+        config: { provider: config.provider, model: config.model, maskedToken: config.maskedToken, ...(config.accountId && { accountId: config.accountId }), ...(config.apiUrl && { apiUrl: config.apiUrl }) },
+      })
+      setSheetOpen(true)
+    } catch (err) {
+      console.error('Failed to load model config:', err)
+      toasts.add({ title: 'Failed to load provider config', variant: 'error' })
     }
   }
 
@@ -309,6 +338,7 @@ function ProvidersPage() {
                 isQuick={quickModel === model.id}
                 isBuiltIn={isBuiltIn(model.id)}
                 onDelete={() => handleDelete(model)}
+                onEdit={() => handleEdit(model)}
                 onSetQuick={() => handleSetQuick(model.id)}
               />
             </div>
@@ -319,13 +349,15 @@ function ProvidersPage() {
       {/* Add model dialog */}
       <AddModelModal
         visible={sheetOpen}
-        onCancel={() => setSheetOpen(false)}
+        onCancel={() => { setSheetOpen(false); setEditingModel(null) }}
         onSuccess={() => {
           setSheetOpen(false)
+          setEditingModel(null)
           fetchAll()
         }}
         authenticatedApi={authenticatedApi}
         aiConfig={aiConfig}
+        editingModel={editingModel}
       />
     </div>
   )

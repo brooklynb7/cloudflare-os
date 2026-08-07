@@ -10,6 +10,10 @@ interface AddModelModalProps {
   onSuccess: () => void
   authenticatedApi: RpcStub<AuthenticatedApi>
   aiConfig: AiGatewayInfo | null
+  editingModel?: {
+    profile: AiChatAuthorInfo
+    config: Omit<AiModelConfig, 'apiToken'> & { maskedToken: string }
+  } | null
 }
 
 type SelectionType =
@@ -89,7 +93,7 @@ function buildOptions(gatewayMode: boolean, enabledProviders: Set<string> | null
   return options
 }
 
-export default function AddModelModal({ visible, onCancel, onSuccess, authenticatedApi, aiConfig }: AddModelModalProps) {
+export default function AddModelModal({ visible, onCancel, onSuccess, authenticatedApi, aiConfig, editingModel }: AddModelModalProps) {
   const toasts = useKumoToastManager()
 
   const [loading, setLoading] = useState(false)
@@ -114,7 +118,7 @@ export default function AddModelModal({ visible, onCancel, onSuccess, authentica
     ? new Set(aiConfig.enabledProviders)
     : null
 
-  // Reset all state when dialog closes
+  // Reset or pre-fill state when dialog opens/closes
   useEffect(() => {
     if (!visible) {
       setSelection(null)
@@ -126,8 +130,32 @@ export default function AddModelModal({ visible, onCancel, onSuccess, authentica
       setApiUrl('')
       setErrors({})
       setAdvancedOpen(false)
+    } else if (editingModel) {
+      // Pre-fill for editing
+      const { profile, config } = editingModel
+      const provider = config.provider
+      const mId = config.model
+
+      // Check if it matches a suggested model
+      const isSuggested = provider in SUGGESTED_MODELS && mId in SUGGESTED_MODELS[provider]
+      if (isSuggested) {
+        const encoded = encodeSelection(provider, mId)
+        setSelectValue(encoded)
+        setSelection({ type: 'suggested', provider, modelId: mId, displayName: SUGGESTED_MODELS[provider][mId].name })
+      } else {
+        const encoded = encodeSelection(provider)
+        setSelectValue(encoded)
+        setSelection({ type: 'custom', provider })
+      }
+      setModelId(mId)
+      setDisplayName(profile.name)
+      setApiToken('')  // Don't pre-fill the token (it's masked)
+      setAccountId(config.accountId || '')
+      setApiUrl(config.apiUrl || '')
+      setErrors({})
+      setAdvancedOpen(!!(config.apiUrl && provider !== 'ollama' && provider !== 'cloudflare'))
     }
-  }, [visible])
+  }, [visible, editingModel])
 
   const handleModelSelect = (value: string) => {
     setSelectValue(value)
@@ -163,7 +191,7 @@ export default function AddModelModal({ visible, onCancel, onSuccess, authentica
     const isCloudflare = selection?.provider === 'cloudflare'
     const showCredentials = !gatewayMode
 
-    if (showCredentials && selection && !isOllama && !apiToken.trim()) {
+    if (showCredentials && selection && !isOllama && !apiToken.trim() && !editingModel) {
       newErrors.apiToken = 'Please enter your API token'
     }
 
@@ -203,11 +231,11 @@ export default function AddModelModal({ visible, onCancel, onSuccess, authentica
       }
 
       await authenticatedApi.addModel(profile, config)
-      toasts.add({ title: 'AI model added successfully', variant: 'success' })
+      toasts.add({ title: editingModel ? 'AI model updated successfully' : 'AI model added successfully', variant: 'success' })
       onSuccess()
     } catch (error: any) {
-      console.error('Failed to add model:', error)
-      toasts.add({ title: 'Failed to add model', variant: 'error' })
+      console.error(`Failed to ${editingModel ? 'update' : 'add'} model:`, error)
+      toasts.add({ title: `Failed to ${editingModel ? 'update' : 'add'} model`, variant: 'error' })
     } finally {
       setLoading(false)
     }
@@ -235,7 +263,7 @@ export default function AddModelModal({ visible, onCancel, onSuccess, authentica
     <Dialog.Root open={visible} onOpenChange={(open) => { if (!open) onCancel() }}>
       <Dialog className="p-6" size="lg">
         <Dialog.Title className="text-lg font-semibold mb-4">
-          Add AI Model
+          {editingModel ? 'Edit AI Model' : 'Add AI Model'}
         </Dialog.Title>
 
         <div className="space-y-4">
@@ -247,6 +275,7 @@ export default function AddModelModal({ visible, onCancel, onSuccess, authentica
             value={selectValue}
             onValueChange={(v) => handleModelSelect(v as string)}
             error={errors.selection}
+            disabled={!!editingModel}
             renderValue={(v) => {
               const opt = options.find(o => o.value === v)
               return opt?.label ?? String(v)
@@ -311,9 +340,11 @@ export default function AddModelModal({ visible, onCancel, onSuccess, authentica
           {showCredentials && selection && (
             <SensitiveInput
               label="API Token"
-              placeholder={API_TOKEN_PLACEHOLDERS[selection.provider]}
+              placeholder={editingModel ? '(leave empty to keep existing token)' : API_TOKEN_PLACEHOLDERS[selection.provider]}
               description={
-                isOllama
+                editingModel
+                  ? 'Leave empty to keep the existing token unchanged'
+                  : isOllama
                   ? 'Optional for local Ollama access'
                   : isCloudflare
                   ? 'An API token with Workers AI Read + Edit permissions (in the dashboard: Workers AI > Use REST API > Create a Workers AI API Token)'
@@ -372,7 +403,7 @@ export default function AddModelModal({ visible, onCancel, onSuccess, authentica
             loading={loading}
             disabled={!selection}
           >
-            Add Model
+            {editingModel ? 'Save Changes' : 'Add Model'}
           </Button>
         </div>
       </Dialog>

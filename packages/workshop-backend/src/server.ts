@@ -127,6 +127,9 @@ class AuthenticatedApiImpl extends RpcTarget implements AuthenticatedApi {
   deleteModel(id: string): Promise<void> {
     return this.user.deleteModel(id);
   }
+  getModelConfig(id: string) {
+    return this.user.getModelConfig(id);
+  }
   setQuickModel(id: string | null): Promise<void> {
     return this.user.setQuickModel(id);
   }

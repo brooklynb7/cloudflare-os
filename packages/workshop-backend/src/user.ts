@@ -1,5 +1,5 @@
 import { RpcStub } from "capnweb";
-import { GadgetMetadataWithTimestamps, AiChatAuthorInfo, AiModelConfig, SUGGESTED_MODELS, CollaboratorRole, ConnectedAccountsSubscriber, ConnectedAccountsFilter, GatekeeperVendorFilter, GadgetMetadata, BlueprintMetadata, BlueprintLibrarySummary, BlueprintSource, BlueprintUserSummary, BLUEPRINT_SCREENSHOT_R2_PREFIX, GatekeeperVendorInfo, BlueprintOutput, OutputSummary, WorkpieceId, ListOutputsResult } from '@gadgets/workshop-shared/api';
+import { GadgetMetadataWithTimestamps, AiChatAuthorInfo, AiModelConfig, AiModelProvider, SUGGESTED_MODELS, CollaboratorRole, ConnectedAccountsSubscriber, ConnectedAccountsFilter, GatekeeperVendorFilter, GadgetMetadata, BlueprintMetadata, BlueprintLibrarySummary, BlueprintSource, BlueprintUserSummary, BLUEPRINT_SCREENSHOT_R2_PREFIX, GatekeeperVendorInfo, BlueprintOutput, OutputSummary, WorkpieceId, ListOutputsResult } from '@gadgets/workshop-shared/api';
 import { Gatekeeper, GatekeeperUser, GatekeeperUserVerifier, GatekeeperVendor, AccountDescription, VendorDescription, GatekeeperConnectCallback, SupportedResource, ResourceConfiguratorFrame, AppUiContext, GatekeeperUiFrame } from "@gadgets/workshop-shared/gatekeeper";
 import { shouldAutoProvisionAccount, ambientGatekeeperMode } from "./provisioning-policy.js";
 import { CloudflareGatekeeperUser } from "@gadgets/workshop-shared/cloudflare-gatekeeper";
@@ -530,6 +530,14 @@ export class UserDurableObject extends DurableObject<Cloudflare.Env> {
       throw new Error(`Provider "${config.provider}" is not available in AI Gateway mode.`);
     }
 
+    // When updating an existing model with an empty apiToken, preserve the stored token.
+    if (!config.apiToken) {
+      let existing = this.storage.aiModels.get(profile.id);
+      if (existing) {
+        config = { ...config, apiToken: existing.config.apiToken };
+      }
+    }
+
     profile.type = "agent";
     this.storage.aiModels.put({profile, config});
   }
@@ -546,6 +554,22 @@ export class UserDurableObject extends DurableObject<Cloudflare.Env> {
     }
 
     this.storage.aiModels.delete(id);
+  }
+
+  async getModelConfig(id: string): Promise<{provider: AiModelProvider, model: string, maskedToken: string, accountId?: string, apiUrl?: string} | null> {
+    let record = this.storage.aiModels.get(id);
+    if (!record) return null;
+    let { config } = record;
+    let maskedToken = config.apiToken
+      ? '\u2022'.repeat(Math.max(0, config.apiToken.length - 4)) + config.apiToken.slice(-4)
+      : '';
+    return {
+      provider: config.provider,
+      model: config.model,
+      maskedToken,
+      ...(config.accountId && { accountId: config.accountId }),
+      ...(config.apiUrl && { apiUrl: config.apiUrl }),
+    };
   }
 
   async setQuickModel(id: string | null): Promise<void> {
